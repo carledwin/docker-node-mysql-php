@@ -1,0 +1,210 @@
+CONFIGUAR O ARQUIVO Dockerfile
+
+>> cd docker-introducao
+>> mkdir api
+>> cd api
+>> mkdir db
+>> cd db
+>> vim Dockerfile
+
+Dentro do arquivo Dockerfile colocar os comandos
+colocar a imagem no docker
+>>FROM mysql
+configuração de variaveis de ambiente do  banco
+>>ENV MYSQL_ROOT_PASSWORD
+
+para salvar e sair do arquivo
+>> ESC
+>> :wq 
+
+consultar images disponíveis no docker
+>> docker image ls
+
+Via terminal 
+construir a imagem no docker dentro da pasta docker-introducao(raiz) via terminal
+A flag -t (tag) para dar um nome para a imagem a flag -f especifica o aqruivo Dockerfile e o (.) no final significa que o contexto onde será criada a imagem é o diretório onde estou nesse momento  
+>>docker build -t mysql-image-1 -f api/db/Dockerfile .
+
+criar um container para utilizar a imagem a flag -d (detach irá executar em background sem precisar continuar na janela para manter o container no ar, sem esta flag não seria possível utilizar 
+esta aba do terminal para outras operações ) a flag --rm (caso este container já exista o mesmo será removido) a flag --name (define o nome do container)  mysql-image-1 é o nome da 
+imagem que será utilizada para criar o container 
+>> docker run -d --rm --name mysql-container-1 mysql-image-1
+
+
+consultar containers no ar
+>> docker ps
+
+
+consultar container e status
+>> docker ps -a
+
+remover um container 
+>> docker rm mysql-container-1
+
+criar um script-1.sql
+
+acessar mysql via terminal exec(serão executados comandos dentro de um container que está no ar) flag -i (estamos executando o comando em modo interativo(processo interativo) permite 
+também que todo os os comandos sejam executadosa até todo o o processo ser concluído) mysql-container-1 é o nome do container que será utilizado,
+todos os comandos a seguir são os comandos que desejamos executar (mysql  -uroot -psenha@123 < api/db/script-1.sql)
+>> docker exec -i mysql-container-1 mysql  -uroot -psenha@123 < api/db/script-1.sql
+
+acessar o container para consultar o banco com a table criada -it(acessar o terminal de forma iterativa) seguido do nome do container e o comando que vamos executar, nesse caso o bash 
+para acessarmos o terminal do container
+>> docker exec -it mysql-container-1 /bin/bash
+
+agora no bash(terminal do container) vamos acessar o banco de dados
+>>mysql -uroot -psenha@123
+
+Ok, agora estamos acessando o mysql do container joia
+
+agora no terminal(bash) dentro do mysql 
+>> use api_db;
+>> show tables;
+>> select * from products;
+
+Dentro do container tudo é perdido quando o mesmo é stopado (sai do ar).
+
+
+Para sair do mysql
+>> exit
+
+Para sair do container 
+>> exit
+
+Para parar o container 
+>> docker stop mysql-container-1
+
+Para executar o container
+>> docker run -d mysql-container-1 mysql-image-1
+
+para entrar no terminal do container
+>> docker exec -it mysql-container-1 /bin/bash
+
+compartilhar uma pasta do host com o container, vamos executar 'docker run ...' com um volume
+configuração do volume (-v $(pwd)/api/db/data:/var/lib/mysql)   $(pwd) retorna o caminho da pasta atual, pasta-host:pastaContainer
+execute o comando a seguir na pasta raiz do projeto e (var/lib/mysql) e o diretório onde está toda a estrutura do banco mysql
+desta froma será criada uma pasta 'data' dentro do diretorio db com varios arquivos do banco de dados
+>> docker run -d -v $(pwd)/api/db/data:/var/lib/mysql --rm --name mysql-container-1 mysql-image-1
+
+instalando as depedencias do node dentro da pasta api, na pasta raiz do projeto
+>> cd api
+>> npm init 
+entre com o nome do package
+>>docker-intro-api
+informe a versão
+>>Enter
+command test
+>> test
+git repository: 
+>> Enter
+keywords:
+>>Docker
+license:
+>>Enter
+is this ok?
+>> yes
+
+instalar nodemon para atualizar e fazer reload a aplicação sempre que os arquivos forem atualizados mesmo com a aplicação no ar
+>> npm install --save-dev nodemon
+
+instalar o express para fazer a rota que vai retornar os produtos e o driver do mysql e facilitar o acesso ao banco
+>> npm install --save express mysql 
+
+no arquivo do projeto package.json acrescente em scripts {..., } logo após test
+>> "start": "nodemon ./src/index"
+
+
+agora vamos criar a pasta src na raiz do projeto
+
+vamos criar o arquivo index.js dentro da pasta src
+
+dentro do index.js vamos importar o mysql e o express
+const express = require('express');
+const mysql  = require('mysql');
+
+vamos instanciar o express
+const app = express();
+
+vamos criar a conexão com o banco de dados
+const connection = mysql.createConnection({
+	host: '',
+	user: 'root',
+	password: 'senha@123',
+	database: 'api_db'
+	
+});
+
+vamos abrir a connection
+>> connection.connect();
+
+***** o host: '' é o ip do container do mysql, o Docker por padrão cria os seus containers na mesma rede
+descobrir o container do mysql
+>>docker inspect mysql-container-1
+busque 
+ "IPAddress": "",
+
+vamos criar uma operação get para recuperar todos os registros do banco de dados
+>>>
+/*rest paths*/
+app.get('/products', function(req, resp){
+
+    connection.query('SELECT * FROM products', function(error, results){
+
+        if(error){
+          throw error  
+        };
+
+        resp.send(results.map(item => ({name: item.name, price: item.price})));
+    });
+});
+>>>
+
+vamos definir a porta em que a aplicação estará ouvindo e respondendo
+app.listen(9001, '0.0.0.0', function(){
+console.log('Listening on port 9001...');
+})
+
+vamos criar um container e uma imagem para a aplicação
+vamos criar um Dockerfile na raiz da aplicação
+
+agora vamos configurar o Dockerfile
+FROM node:10-slim
+
+informar onde ficarão os arquivos javascript
+WORKDIR /home/node/app
+
+quando o container estiver no ar utilizaremos o comando 
+CMD npm start
+
+**Execute esse comando na raiz do projeto
+Agora com o arquivo Dockerfile configurado vamos criar a imagem
+** caso não possua permissão para executar esse comando utilize o sudo antes do comando
+>> docker build -t node-image-1 -f api/Dockerfile .
+
+
+agora vamos rodar a imagem criada, dentro de um container, como vamos acessar o app fora do container precisamos espelhar(mapear) a porta informando que o acesso externo
+e a flag -link informa o link com o container node-container-1 
+será 9001:9001 host-port:container-port
+>> docker run -d -v $(pwd)/api:/home/node/app -p 9001:9001 --link mysql-container-1 --rm --name node-container-1 node-image-1 
+
+Criar o container mysql
+docker run -d -v $(pwd)/api/db/data:/var/lib/mysql --rm --name mysql-container-1 mysql-image-1
+Acessar o mysql
+docker exec -it mysql-container-1 /bin/bash
+Criar um container node
+docker run -d -v $(pwd)/api:/home/node/app -p 9001:9001 --link mysql-container-1 --rm --name node-container-1 node-image-1
+
+
+construir uma imagem PHP com docker build, se necessáiro utilize sudo antes do comando
+>> docker build -t php-image-1 -f website/Dockerfile .
+
+
+agora vamos rodar o container com essa imagem -p hostlocal:hostcontainer
+>> docker run -d -v $(pwd)/website:/var/www/html -p 8888:80 --link node-container-1 --rm --name php-container-1 php-image-1
+
+URLS
+acessar api do node com a lista de products
+-- http://localhost:9001/products
+
+acessar o website em php
+-- http://localhost:8888
